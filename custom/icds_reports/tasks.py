@@ -992,7 +992,7 @@ def prepare_excel_reports(config, aggregation_level, include_test, beta, locatio
             cache_key = create_service_delivery_report(
                 excel_data,
                 data_type,
-                config,
+                config
             )
         else:
             cache_key = create_excel_file(excel_data, data_type, file_format)
@@ -1018,6 +1018,7 @@ def prepare_excel_reports(config, aggregation_level, include_test, beta, locatio
                 excel_data,
                 data_type,
                 config,
+                aggregation_level
             )
         else:
             cache_key = create_excel_file(excel_data, data_type, file_format)
