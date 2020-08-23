@@ -1,8 +1,12 @@
 from collections import defaultdict, namedtuple
 from datetime import datetime, timedelta
 
+from django.conf import settings
+
+from dimagi.utils.chunked import chunked
 from dimagi.utils.parsing import string_to_datetime
 
+from corehq.apps.data_dictionary.util import get_data_dict_case_types
 from corehq.apps.es import (
     CaseES,
     CaseSearchES,
@@ -334,7 +338,20 @@ def get_forms(domain, startdate, enddate, user_ids=None, app_ids=None, xmlnss=No
 
 def get_form_counts_by_user_xmlns(domain, startdate, enddate, user_ids=None,
                                   xmlnss=None, by_submission_time=True, export=False):
+    USER_FILTER_CHUNK_SIZE = getattr(settings, 'USER_FILTER_CHUNK_SIZE', 10000)
+    to_ret = defaultdict(lambda: 0)
+    if not user_ids:
+        to_ret.update(_chunked_get_form_counts_by_user_xmlns(
+            domain, startdate, enddate, None, xmlnss, by_submission_time, export))
+    else:
+        for chunk in chunked(user_ids, USER_FILTER_CHUNK_SIZE):
+            to_ret.update(_chunked_get_form_counts_by_user_xmlns(
+                domain, startdate, enddate, chunk, xmlnss, by_submission_time, export))
+    return to_ret
 
+
+def _chunked_get_form_counts_by_user_xmlns(domain, startdate, enddate, user_ids=None,
+                                  xmlnss=None, by_submission_time=True, export=False):
     missing_users = False
 
     date_filter_fn = submitted_filter if by_submission_time else completed_filter
@@ -511,6 +528,26 @@ def get_case_and_action_counts_for_domains(domains):
     }
 
 
+def get_form_ids_missing_from_elasticsearch(all_form_ids):
+    missing_from_elasticsearch = set()
+    for form_ids in chunked(all_form_ids, 500):
+        form_ids = set(form_ids)
+        not_missing = set(FormES().doc_id(form_ids).get_ids())
+        missing_from_elasticsearch.update(form_ids - not_missing)
+        assert not_missing - form_ids == set()
+    return list(missing_from_elasticsearch)
+
+
+def get_case_ids_missing_from_elasticsearch(all_case_ids):
+    missing_from_elasticsearch = set()
+    for case_ids in chunked(all_case_ids, 500):
+        case_ids = set(case_ids)
+        not_missing = set(CaseES().doc_id(case_ids).get_ids())
+        missing_from_elasticsearch.update(case_ids - not_missing)
+        assert not_missing - case_ids == set()
+    return list(missing_from_elasticsearch)
+
+
 def get_all_user_ids_submitted(domain, app_ids=None):
     query = (
         FormES()
@@ -577,6 +614,11 @@ def scroll_case_names(domain, case_ids):
 
 @quickcache(['domain', 'use_case_search'], timeout=24 * 3600)
 def get_case_types_for_domain_es(domain, use_case_search=False):
+    """
+    Returns case types for which there is at least one existing case.
+
+    get_case_types_for_domain is preferred for most uses
+    """
     index_class = CaseSearchES if use_case_search else CaseES
     query = (
         index_class().domain(domain).size(0)
@@ -587,3 +629,14 @@ def get_case_types_for_domain_es(domain, use_case_search=False):
 
 def get_case_search_types_for_domain_es(domain):
     return get_case_types_for_domain_es(domain, True)
+
+
+def get_case_types_for_domain(domain):
+    """
+    Returns case types for which there is at least one existing case and any
+    defined in the data dictionary, which includes those referenced in an app
+    and those added manually.
+    """
+    es_types = get_case_types_for_domain_es(domain)
+    data_dict_types = get_data_dict_case_types(domain)
+    return es_types | data_dict_types

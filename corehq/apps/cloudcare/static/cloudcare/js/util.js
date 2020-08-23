@@ -1,4 +1,6 @@
-hqDefine('cloudcare/js/util', function () {
+/*global FormplayerFrontend */
+
+hqDefine('cloudcare/js/util',['hqwebapp/js/initial_page_data', 'integration/js/hmac_callout'], function (initialPageData) {
     if (!String.prototype.startsWith) {
         String.prototype.startsWith = function (searchString, position) {
             position = position || 0;
@@ -32,18 +34,34 @@ hqDefine('cloudcare/js/util', function () {
             message = gettext("Sorry, an error occurred while processing that request.");
         }
         _show(message, $el, null, "alert alert-danger");
+        reportFormplayerErrorToHQ({
+            type: 'show_error_notification',
+            message: message,
+        });
+
     };
 
     var showWarning = function (message, $el) {
         if (message === undefined) {
             return;
         }
-        _show(message, $el, 5000, "alert alert-warning");
+        _show(message, $el, null, "alert alert-danger");
     };
 
     var showHTMLError = function (message, $el, autoHideTime) {
-        message = message || gettext("Sorry, an error occurred while processing that request.");
-        _show(message, $el, autoHideTime, "", true);
+        var htmlMessage = message = message || gettext("Sorry, an error occurred while processing that request.");
+        var $container = _show(message, $el, autoHideTime, "alert alert-danger", true);
+        try {
+            message = $container.text();  // pull out just the text the user sees
+            message = message.replace(/\s+/g, ' ').trim();
+        } catch (e) {
+            // leave the message as at came in if there's an issue parsing text from the container
+        }
+        reportFormplayerErrorToHQ({
+            type: 'show_error_notification',
+            message: message,
+            htmlMessage: htmlMessage,
+        });
     };
 
     var showSuccess = function (message, $el, autoHideTime, isHTML) {
@@ -64,13 +82,19 @@ hqDefine('cloudcare/js/util', function () {
         }
         // HTML errors may already have an alert dialog
         $alertDialog = $container.hasClass("alert") ? $container : $container.find('.alert');
-        $alertDialog
-            .prepend(
-                $("<a />")
-                    .addClass("close")
-                    .attr("data-dismiss", "alert")
-                    .html("&times;")
-            );
+        try {
+            $alertDialog
+                .prepend(
+                    $("<a />")
+                        .addClass("close")
+                        .attr("data-dismiss", "alert")
+                        .html("&times;")
+                );
+        } catch (e) {
+            // escaping a DOM-related error from running mocha tests using grunt
+            // in the command line. This passes just fine in the browser but
+            // breaks only when travis runs it.
+        }
         $el.append($container);
         if (autoHideTime) {
             $container.delay(autoHideTime).fadeOut(500);
@@ -117,8 +141,111 @@ hqDefine('cloudcare/js/util', function () {
         }
     };
 
+    var breakLocksComplete = function (isError, message) {
+        hideLoading();
+        if (isError) {
+            showError(
+                gettext('Error breaking locks. Please report an issue if this persists.'),
+                $('#cloudcare-notifications')
+            );
+        } else {
+            showSuccess(message, $('#cloudcare-notifications'), 5000);
+        }
+    };
+
     var hideLoading = function (selector) {
         NProgress.done();
+    };
+
+    var reportFormplayerErrorToHQ = function (data) {
+        try {
+            var reverse = initialPageData.reverse;
+            var cloudcareEnv = FormplayerFrontend.request('currentUser').environment;
+            if (!data.cloudcareEnv) {
+                data.cloudcareEnv = cloudcareEnv || 'unknown';
+            }
+            $.ajax({
+                type: 'POST',
+                url: reverse('report_formplayer_error'),
+                data: JSON.stringify(data),
+                contentType: "application/json",
+                dataType: "json",
+                success: function () {
+                    window.console.info('Successfully reported error: ' + JSON.stringify(data));
+                },
+                error: function () {
+                    window.console.error('Failed to report error: ' + JSON.stringify(data));
+                },
+            });
+        } catch (e) {
+            window.console.error(
+                "reportFormplayerErrorToHQ failed hard and there is nowhere " +
+                "else to report this error: " + JSON.stringify(data),
+                e
+            );
+        }
+    };
+
+    function chainedRenderer(matcher, transform, target) {
+        return function (tokens, idx, options, env, self) {
+            var hIndex = tokens[idx].attrIndex('href');
+            var matched = false;
+            if (hIndex >= 0) {
+                var href =  tokens[idx].attrs[hIndex][1];
+                if (matcher(href)) {
+                    transform(href, hIndex, tokens[idx]);
+                    matched = true;
+                }
+            }
+            if (matched) {
+                var aIndex = tokens[idx].attrIndex('target');
+
+                if (aIndex < 0) {
+                    tokens[idx].attrPush(['target', target]); // add new attribute
+                } else {
+                    tokens[idx].attrs[aIndex][1] = target;    // replace value of existing attr
+                }
+            }
+            return matched;
+        };
+    }
+
+    var injectMarkdownAnchorTransforms = function () {
+        if (window.mdAnchorRender) {
+            var renderers = [];
+            if (initialPageData.get('dialer_enabled')) {
+                renderers.push(chainedRenderer(
+                    function (href) { return href.startsWith("tel://"); },
+                    function (href, hIndex, anchor) {
+                        var callout = href.substring("tel://".length);
+                        var url = initialPageData.reverse("dialer_view");
+                        anchor.attrs[hIndex][1] = url + "?callout_number=" + callout;
+                    },
+                    "dialer"
+                ));
+            }
+            if (initialPageData.get('hmac_root_url')) {
+                renderers.push(chainedRenderer(
+                    function (href) { return href.startsWith(initialPageData.get('hmac_root_url')); },
+                    function (href, hIndex, anchor) {
+                        var aIndex = anchor.attrIndex('onclick');
+                        var clickBody = "HMACCallout(this);return false;";
+                        if (aIndex < 0) {
+                            anchor.attrPush(['onclick', clickBody]);
+                        } else {
+                            anchor[aIndex][1] = clickBody;
+                        }
+                    },
+                    "hmac_callout"
+                ));
+            }
+            window.mdAnchorRender = function (tokens, idx, options, env, self) {
+                renderers.forEach(function (r) {
+                    r(tokens, idx, options, env, self);
+                });
+                return self.renderToken(tokens, idx, options);
+            };
+        }
     };
 
     return {
@@ -129,8 +256,11 @@ hqDefine('cloudcare/js/util', function () {
         showHTMLError: showHTMLError,
         showSuccess: showSuccess,
         clearUserDataComplete: clearUserDataComplete,
+        breakLocksComplete: breakLocksComplete,
         formplayerLoading: formplayerLoading,
         formplayerLoadingComplete: formplayerLoadingComplete,
         formplayerSyncComplete: formplayerSyncComplete,
+        reportFormplayerErrorToHQ: reportFormplayerErrorToHQ,
+        injectMarkdownAnchorTransforms: injectMarkdownAnchorTransforms,
     };
 });

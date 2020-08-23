@@ -86,23 +86,6 @@ hqDefine("app_manager/js/modules/module_view", function () {
             $('#case_type_form_group').removeClass('has-error');
         };
 
-        var $nameEnumContainer = $('#name-enum-mapping');
-        if ($nameEnumContainer.length) {
-            var nameMapping = hqImport('hqwebapp/js/ui-element').key_value_mapping({
-                lang: moduleBrief.lang,
-                langs: moduleBrief.langs,
-                items: moduleBrief.name_enum,
-                property_name: 'name',
-                values_are_icons: false,
-                keys_are_conditions: true,
-            });
-            nameMapping.on("change", function () {
-                $nameEnumContainer.find("[name='name_enum']").val(JSON.stringify(this.getItems()));
-                $nameEnumContainer.find("[name='name_enum']").trigger('change');    // trigger save button
-            });
-            $nameEnumContainer.append(nameMapping.ui);
-        }
-
         $('#case_type').on('textchange', function () {
             var $el = $(this),
                 value = $el.val(),
@@ -227,7 +210,8 @@ hqDefine("app_manager/js/modules/module_view", function () {
             $('#sourceModuleForms').koApplyBindings(new ShadowModule(
                 shadowOptions.modules,
                 shadowOptions.source_module_id,
-                shadowOptions.excluded_form_ids
+                shadowOptions.excluded_form_ids,
+                shadowOptions.shadow_module_version
             ));
         } else if (moduleType === 'advanced') {
             if (moduleBrief.has_schedule || hqImport('hqwebapp/js/toggles').toggleEnabled('VISIT_SCHEDULER')) {

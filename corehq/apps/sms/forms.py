@@ -30,16 +30,15 @@ from corehq.apps.hqwebapp.crispy import HQFormHelper
 from corehq.apps.hqwebapp.widgets import SelectToggle
 from corehq.apps.locations.models import SQLLocation
 from corehq.apps.reminders.forms import validate_time
-from corehq.apps.sms.models import (
-    SQLMobileBackend,
-)
+from corehq.apps.sms.models import SQLMobileBackend
 from corehq.apps.sms.util import (
     ALLOWED_SURVEY_DATE_FORMATS,
     get_sms_backend_classes,
+    is_superuser_or_contractor,
     strip_plus,
     validate_phone_number,
 )
-from corehq.apps.users.models import CommCareUser
+from corehq.apps.users.models import CommCareUser, CouchUser
 
 ENABLED = "ENABLED"
 DISABLED = "DISABLED"
@@ -873,7 +872,8 @@ class BackendForm(Form):
     )
     authorized_domains = CharField(
         required=False,
-        label=ugettext_noop("List of authorized domains")
+        label=ugettext_noop("List of authorized domains"),
+        help_text=ugettext_lazy("A comma-separated list of domain names")
     )
     reply_to_phone_number = CharField(
         required=False,
@@ -883,6 +883,16 @@ class BackendForm(Form):
         required=False,
         label=ugettext_lazy("Inbound API Key"),
         disabled=True,
+    )
+    opt_out_keywords = CharField(
+        required=False,
+        label=ugettext_noop("List of opt out keywords"),
+        help_text=ugettext_lazy("A comma-separated list of keywords")
+    )
+    opt_in_keywords = CharField(
+        required=False,
+        label=ugettext_noop("List of opt in keywords"),
+        help_text=ugettext_lazy("A comma-separated list of keywords")
     )
 
     @property
@@ -895,6 +905,8 @@ class BackendForm(Form):
             crispy.Field('name', css_class='input-xxlarge'),
             crispy.Field('description', css_class='input-xxlarge', rows="3"),
             crispy.Field('reply_to_phone_number', css_class='input-xxlarge'),
+            crispy.Field('opt_out_keywords'),
+            crispy.Field('opt_in_keywords')
         ]
 
         if not self.is_global_backend:
@@ -1000,6 +1012,20 @@ class BackendForm(Form):
                 return []
             else:
                 return [domain.strip() for domain in value.split(",")]
+
+    def clean_opt_out_keywords(self):
+        keywords = self.cleaned_data.get('opt_out_keywords')
+        if not keywords:
+            return []
+        else:
+            return [kw.strip().upper() for kw in keywords.split(',')]
+
+    def clean_opt_in_keywords(self):
+        keywords = self.cleaned_data.get('opt_in_keywords')
+        if not keywords:
+            return []
+        else:
+            return [kw.strip().upper() for kw in keywords.split(',')]
 
     def clean_reply_to_phone_number(self):
         value = self.cleaned_data.get("reply_to_phone_number")
@@ -1263,14 +1289,14 @@ class InitiateAddSMSBackendForm(Form):
         label="Gateway Type",
     )
 
-    def __init__(self, is_superuser=False, *args, **kwargs):
+    def __init__(self, user: CouchUser, *args, **kwargs):
         super(InitiateAddSMSBackendForm, self).__init__(*args, **kwargs)
 
         from corehq.messaging.smsbackends.telerivet.models import SQLTelerivetBackend
         backend_classes = get_sms_backend_classes()
         backend_choices = []
         for api_id, klass in backend_classes.items():
-            if is_superuser or api_id == SQLTelerivetBackend.get_api_id():
+            if is_superuser_or_contractor(user) or api_id == SQLTelerivetBackend.get_api_id():
                 friendly_name = klass.get_generic_name()
                 backend_choices.append((api_id, friendly_name))
         backend_choices = sorted(backend_choices, key=lambda backend: backend[1])

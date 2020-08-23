@@ -24,9 +24,24 @@ from corehq.motech.repeaters.views import (
     resume_repeater,
     test_repeater,
 )
-from corehq.motech.views import MotechLogDetailView, MotechLogListView
+from corehq.motech.views import (
+    ConnectionSettingsDetailView,
+    ConnectionSettingsListView,
+    MotechLogDetailView,
+    MotechLogListView,
+    test_connection_settings,
+)
 
 urlpatterns = [
+    url(r'^conn/$', ConnectionSettingsListView.as_view(),
+        name=ConnectionSettingsListView.urlname),
+    url(r'^conn/(?P<pk>\d+)/$', ConnectionSettingsDetailView.as_view(),
+        name=ConnectionSettingsDetailView.urlname),
+    url(r'^conn/add/$', ConnectionSettingsDetailView.as_view(),
+        name=ConnectionSettingsDetailView.urlname),
+    url(r'^conn/test/$', test_connection_settings,
+        name='test_connection_settings'),
+
     url(r'^forwarding/$', DomainForwardingOptionsView.as_view(), name=DomainForwardingOptionsView.urlname),
     url(r'^forwarding/new/FormRepeater/$', AddFormRepeaterView.as_view(),
         {'repeater_type': 'FormRepeater'}, name=AddFormRepeaterView.urlname),
@@ -40,12 +55,16 @@ urlpatterns = [
         {'repeater_type': 'Dhis2EntityRepeater'}, name=AddDhis2EntityRepeaterView.urlname),
     url(r'^forwarding/new/SearchByParamsRepeater/$', AddCaseRepeaterView.as_view(),
         {'repeater_type': 'SearchByParamsRepeater'}, name=AddCaseRepeaterView.urlname),
+    url(r'^forwarding/new/ReferCaseRepeater/$', AddCaseRepeaterView.as_view(),
+        {'repeater_type': 'ReferCaseRepeater'}, name=AddCaseRepeaterView.urlname),
     url(r'^forwarding/new/(?P<repeater_type>\w+)/$', AddRepeaterView.as_view(), name=AddRepeaterView.urlname),
 
     url(r'^forwarding/edit/CaseRepeater/(?P<repeater_id>\w+)/$', EditCaseRepeaterView.as_view(),
         {'repeater_type': 'CaseRepeater'}, name=EditCaseRepeaterView.urlname),
     url(r'^forwarding/edit/FormRepeater/(?P<repeater_id>\w+)/$', EditFormRepeaterView.as_view(),
         {'repeater_type': 'FormRepeater'}, name=EditFormRepeaterView.urlname),
+    url(r'^forwarding/edit/ReferCaseRepeater/(?P<repeater_id>\w+)/$', EditCaseRepeaterView.as_view(),
+        {'repeater_type': 'ReferCaseRepeater'}, name=EditCaseRepeaterView.urlname),
     url(r'^forwarding/edit/OpenmrsRepeater/(?P<repeater_id>\w+)/$', EditOpenmrsRepeaterView.as_view(),
         {'repeater_type': 'OpenmrsRepeater'}, name=EditOpenmrsRepeaterView.urlname),
     url(r'^forwarding/edit/Dhis2Repeater/(?P<repeater_id>\w+)/$', EditDhis2RepeaterView.as_view(),

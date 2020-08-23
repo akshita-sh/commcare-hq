@@ -192,7 +192,7 @@ def get_app_view_context(request, app):
             if disable_if_true and getattr(app, setting['id']):
                 continue
             if is_linked_app(app):
-                if setting['id'] in app.SUPPORTED_SETTINGS:
+                if setting['id'] in app.supported_settings:
                     if setting['id'] not in app.linked_app_attrs:
                         setting['is_inherited'] = True
             new_settings.append(setting)
@@ -411,6 +411,7 @@ def get_apps_base_context(request, domain, app):
             'show_report_modules': toggles.MOBILE_UCR.enabled(domain),
             'disable_report_modules': disable_report_modules,
             'show_shadow_modules': toggles.APP_BUILDER_SHADOW_MODULES.enabled(domain),
+            'show_shadow_module_v1': toggles.V1_SHADOW_MODULES.enabled(domain),
             'show_shadow_forms': show_advanced,
             'show_training_modules': toggles.TRAINING_MODULE.enabled(domain) and app.enable_training_modules,
             'practice_users': [{"id": u['_id'], "text": u["username"]} for u in practice_users],
@@ -854,7 +855,7 @@ def edit_app_attr(request, domain, app_id, attr):
                 value = transformation(value)
             if can_set_attr(attribute):
                 setattr(app, attribute, value)
-            if is_linked_app(app) and attribute in app.SUPPORTED_SETTINGS:
+            if is_linked_app(app) and attribute in app.supported_settings:
                 app.linked_app_attrs.update({
                     attribute: value,
                 })

@@ -5,6 +5,7 @@ from django_prbac.utils import has_privilege
 
 from corehq import privileges, toggles
 from corehq.apps.hqwebapp.templatetags.hq_shared_tags import toggle_enabled
+from corehq.apps.linked_domain.util import is_linked_report
 from corehq.apps.userreports.adapter import IndicatorAdapterLoadTracker
 from corehq.apps.userreports.const import REPORT_BUILDER_EVENTS_KEY
 from corehq.apps.userreports.exceptions import BadSpecError
@@ -67,11 +68,17 @@ def can_edit_report(request, report):
     if not request.can_access_all_locations:
         return False
 
+    if not request.couch_user.can_edit_reports():
+        return False
+
     ucr_toggle = toggle_enabled(request, toggles.USER_CONFIGURABLE_REPORTS)
     report_builder_toggle = toggle_enabled(request, toggles.REPORT_BUILDER)
     report_builder_beta_toggle = toggle_enabled(request, toggles.REPORT_BUILDER_BETA_GROUP)
     add_on_priv = has_report_builder_add_on_privilege(request)
     created_by_builder = report.spec.report_meta.created_by_builder
+
+    if is_linked_report(report.spec):
+        return False
 
     if created_by_builder:
         return report_builder_toggle or report_builder_beta_toggle or add_on_priv

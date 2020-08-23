@@ -1,12 +1,14 @@
+import re
 import tempfile
 from collections import OrderedDict
+
+from django.db.models import Q
 
 from memoized import memoized
 
 from couchexport.models import Format
 from couchexport.writers import Excel2007ExportWriter
 from dimagi.utils.couch.loosechange import map_reduce
-from django.db.models import Q
 from soil import DownloadBase
 from soil.util import expose_blob_download
 
@@ -205,7 +207,7 @@ class LocationExporter(object):
         ])
         for loc_type in self.location_types:
             additional_headers = []
-            additional_headers.extend('data: {}'.format(f.slug) for f in self.data_model.fields)
+            additional_headers.extend('data: {}'.format(f.slug) for f in self.data_model.get_fields())
             if self.include_consumption_flag and loc_type.name not in self.administrative_types:
                 additional_headers.extend('consumption: {}'.format(code) for code in self.product_codes)
             additional_headers.append(LOCATION_SHEET_HEADERS_OPTIONAL['uncategorized_data'])
@@ -238,7 +240,7 @@ class LocationExporter(object):
                     'do_delete': '',
                 }
                 row = [row_data[attr] for attr in LOCATION_SHEET_HEADERS_BASE.keys()]
-                for field in self.data_model.fields:
+                for field in self.data_model.get_fields():
                     row.append(model_data.get(field.slug, ''))
 
                 if include_consumption:
@@ -279,7 +281,8 @@ class LocationExporter(object):
         writer.write([('types', rows)])
 
 
-def dump_locations(domain, download_id, include_consumption, headers_only, root_location_id=None, task=None):
+def dump_locations(domain, download_id, include_consumption, headers_only,
+                   owner_id, root_location_id=None, task=None):
     exporter = LocationExporter(domain, include_consumption=include_consumption, root_location_id=root_location_id,
                                 headers_only=headers_only, async_task=task)
 
@@ -312,6 +315,7 @@ def dump_locations(domain, download_id, include_consumption, headers_only, root_
             mimetype=file_format.mimetype,
             content_disposition=safe_filename_header(filename, file_format.extension),
             download_id=download_id,
+            owner_ids=[owner_id],
         )
 
 
@@ -336,3 +340,8 @@ def get_locations_from_ids(location_ids, domain, base_queryset=None):
     if len(locations) != expected_count:
         raise SQLLocation.DoesNotExist('One or more of the locations was not found.')
     return locations
+
+
+def valid_location_site_code(site_code):
+    slug_regex = re.compile(r'^[-_\w\d]+$')
+    return slug_regex.match(site_code)

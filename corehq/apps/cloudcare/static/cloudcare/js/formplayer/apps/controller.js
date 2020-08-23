@@ -4,11 +4,9 @@ FormplayerFrontend.module("Apps", function (Apps, FormplayerFrontend, Backbone, 
     Apps.Controller = {
         listApps: function () {
             $.when(FormplayerFrontend.request("appselect:apps")).done(function (apps) {
-
                 var appGridView = new Apps.Views.GridView({
                     collection: apps,
                 });
-
                 FormplayerFrontend.regions.main.show(appGridView);
             });
         },
@@ -43,6 +41,10 @@ FormplayerFrontend.module("Apps", function (Apps, FormplayerFrontend, Backbone, 
                     new Backbone.Model({ slug: FormplayerFrontend.Layout.Views.SettingSlugs.SET_LANG }),
                     new Backbone.Model({ slug: FormplayerFrontend.Layout.Views.SettingSlugs.SET_DISPLAY }),
                 ]);
+            } else {
+                settings.push(
+                    new Backbone.Model({ slug: FormplayerFrontend.Layout.Views.SettingSlugs.BREAK_LOCKS })
+                );
             }
             settings.push(
                 new Backbone.Model({ slug: FormplayerFrontend.Layout.Views.SettingSlugs.CLEAR_USER_DATA })

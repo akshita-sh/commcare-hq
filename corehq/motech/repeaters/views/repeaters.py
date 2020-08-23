@@ -12,8 +12,6 @@ from django.views.decorators.http import require_POST
 from memoized import memoized
 from requests.auth import HTTPBasicAuth, HTTPDigestAuth
 
-from dimagi.utils.post import simple_post
-
 from corehq import privileges, toggles
 from corehq.apps.accounting.decorators import requires_privilege_with_fallback
 from corehq.apps.domain.decorators import domain_admin_required
@@ -30,8 +28,8 @@ from corehq.motech.auth import HTTPBearerAuth
 from corehq.motech.const import (
     ALGO_AES,
     BASIC_AUTH,
-    DIGEST_AUTH,
     BEARER_AUTH,
+    DIGEST_AUTH,
     PASSWORD_PLACEHOLDER,
 )
 from corehq.motech.repeaters.forms import (
@@ -43,6 +41,7 @@ from corehq.motech.repeaters.forms import (
 from corehq.motech.repeaters.models import Repeater, RepeatRecord
 from corehq.motech.repeaters.repeater_generators import RegisterGenerator
 from corehq.motech.repeaters.utils import get_all_repeater_types
+from corehq.motech.requests import simple_post
 from corehq.motech.utils import b64_aes_encrypt
 
 RepeaterTypeInfo = namedtuple('RepeaterTypeInfo', 'class_name friendly_name has_config instances')
@@ -139,17 +138,8 @@ class BaseRepeaterView(BaseAdminProjectSettingsView):
 
     def set_repeater_attr(self, repeater, cleaned_data):
         repeater.domain = self.domain
-        repeater.url = cleaned_data['url']
-        repeater.auth_type = cleaned_data['auth_type'] or None
-        repeater.username = cleaned_data['username']
-        if cleaned_data['password'] != PASSWORD_PLACEHOLDER:
-            repeater.password = '${algo}${ciphertext}'.format(
-                algo=ALGO_AES,
-                ciphertext=b64_aes_encrypt(cleaned_data['password'])
-            )
+        repeater.connection_settings_id = int(cleaned_data['connection_settings_id'])
         repeater.format = cleaned_data['format']
-        repeater.notify_addresses_str = cleaned_data['notify_addresses_str']
-        repeater.skip_cert_verify = cleaned_data['skip_cert_verify']
         return repeater
 
     def post_save(self, request, repeater):
@@ -375,7 +365,6 @@ def test_repeater(request, domain):
     repeater_type = request.POST['repeater_type']
     format = request.POST.get('format', None)
     repeater_class = get_all_repeater_types()[repeater_type]
-    auth_type = request.POST.get('auth_type')
 
     form = GenericRepeaterForm(
         {"url": url, "format": format},
@@ -386,24 +375,22 @@ def test_repeater(request, domain):
         url = form.cleaned_data["url"]
         format = format or RegisterGenerator.default_format_by_repeater(repeater_class)
         generator_class = RegisterGenerator.generator_class_by_repeater_format(repeater_class, format)
-        generator = generator_class(repeater_class())
+        repeater = repeater_class(
+            username=request.POST.get('username'),
+            password=request.POST.get('password'),
+            auth_type=request.POST.get('auth_type'),
+        )
+        generator = generator_class(repeater)
         fake_post = generator.get_test_payload(domain)
         headers = generator.get_headers()
-
-        username = request.POST.get('username')
-        password = request.POST.get('password')
         verify = not request.POST.get('skip_cert_verify') == 'true'
-        if auth_type == BASIC_AUTH:
-            auth = HTTPBasicAuth(username, password)
-        elif auth_type == DIGEST_AUTH:
-            auth = HTTPDigestAuth(username, password)
-        elif auth_type == BEARER_AUTH:
-            auth = HTTPBearerAuth(username, password)
-        else:
-            auth = None
-
         try:
-            resp = simple_post(fake_post, url, headers=headers, auth=auth, verify=verify)
+            resp = simple_post(
+                domain, url, fake_post,
+                headers=headers,
+                auth_manager=repeater.connection_settings.get_auth_manager(),
+                verify=verify,
+            )
             if 200 <= resp.status_code < 300:
                 return HttpResponse(json.dumps({"success": True,
                                                 "response": resp.text,

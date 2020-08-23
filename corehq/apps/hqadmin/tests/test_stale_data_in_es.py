@@ -9,6 +9,7 @@ from casexml.apps.case.tests.util import delete_all_cases, delete_all_xforms
 
 import mock
 from corehq.apps.domain.models import Domain
+from corehq.apps.es.tests.utils import es_test
 from corehq.apps.hqadmin.management.commands.stale_data_in_es import DataRow
 from corehq.apps.receiverwrapper.util import submit_form_locally
 from corehq.elastic import get_es_new, send_to_elasticsearch
@@ -32,6 +33,7 @@ class ExitEarlyException(Exception):
     pass
 
 
+@es_test
 class TestStaleDataInESSQL(TestCase):
 
     use_sql_backend = True
@@ -206,7 +208,7 @@ class TestStaleDataInESSQL(TestCase):
 
     def _submit_form(self, domain, new_cases=0, update_cases=()):
         case_blocks = [
-            CaseBlock(
+            CaseBlock.deprecated_init(
                 case_id=str(uuid.uuid4()),
                 case_type=self.case_type,
                 create={'name': str(uuid.uuid4())[:5]},
@@ -214,7 +216,7 @@ class TestStaleDataInESSQL(TestCase):
             for i in range(new_cases)
         ]
         case_blocks += [
-            CaseBlock(
+            CaseBlock.deprecated_init(
                 case_id=case.case_id,
                 update={}
             )
@@ -308,6 +310,7 @@ class TestStaleDataInESSQL(TestCase):
         self._delete_cases_from_es(self.cases_to_delete_from_es)
 
 
+@es_test
 class TestStaleDataInESCouch(TestStaleDataInESSQL):
 
     use_sql_backend = False
